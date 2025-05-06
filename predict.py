@@ -1,50 +1,48 @@
 import cv2
-import torch
 from ultralytics import YOLO
 
-# Load the trained YOLOv8 model (directly from local path)
-model = YOLO(r'C:\Users\Isha Gupta\Desktop\Python\runs\detect\train4\weights\best.pt')
+# Load custom model
+model = YOLO(r'C:\Users\Isha Gupta\OneDrive\Desktop\Python\runs\detect\train6\weights\best.pt')
+print("Model Class Names:", model.names)  # Verify class IDs: 0=closed_fist, 1=open_palm, 2=finger_curl?
 
-# Start the webcam feed (0 is the default camera)
-cap = cv2.VideoCapture(0)
+webcam = cv2.VideoCapture(0)
 
 while True:
-    # Read a frame from the webcam
-    ret, frame = cap.read()
-    if not ret:
-        print("Failed to grab frame")
+    success, frame = webcam.read()
+    if not success: break
+    
+    # Use predict() instead of track() for gesture detection
+    results = model.predict(frame, conf=0.4, imgsz=640)
+    
+    # Get detection data
+    boxes = results[0].boxes
+    class_ids = boxes.cls.cpu().numpy()  # Gesture class IDs
+    confidences = boxes.conf.cpu().numpy()
+    
+    # Custom annotation
+    annotated_frame = frame.copy()
+    for box, cls_id, conf in zip(boxes.xyxy, class_ids, confidences):
+        label = f"{model.names[int(cls_id)]} {conf:.2f}"
+        
+        # Choose different colors per gesture
+        color = (0,255,0) if "open" in label else (0,0,255)  # Green for open, red for others
+        
+        cv2.rectangle(annotated_frame, (int(box[0]), int(box[1])), 
+                     (int(box[2]), int(box[3])), color, 2)
+        cv2.putText(annotated_frame, label, (int(box[0]), int(box[1]-10)), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+
+    # Display counts
+    counts = {name: sum(class_ids == i) for i, name in model.names.items()}
+    count_text = f"Fist: {counts.get('closed_fist',0)} | Palm: {counts.get('open_palm',0)} | Curl: {counts.get('finger_curl',0)}"
+    cv2.putText(annotated_frame, count_text, (10,30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0), 2)
+
+    cv2.imshow("Gesture Detection", annotated_frame)
+    if cv2.waitKey(1) == ord('q'):
         break
 
-    # Resize frame to match YOLOv8 input size (640x640)
-    frame_resized = cv2.resize(frame, (640, 640))
-
-    # Convert frame to RGB
-    frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
-
-    # Perform inference (hand gesture detection) with a lower confidence threshold
-    results = model(frame_rgb, conf=0.05)  # Lowered confidence threshold
-
-    # Access the first result (assuming it's a list of detections)
-    result = results[0]
-
-    # Display detection details
-    for detection in result.boxes.data:  # Accessing each detected box
-        x1, y1, x2, y2, confidence, class_id = detection
-        print(f"Class: {class_id}, Confidence: {confidence}")
-
-    # Plot results on the frame (bounding boxes, labels, etc.)
-    frame_with_boxes = result.plot()
-
-    # Convert the frame back to BGR for OpenCV compatibility
-    frame_bgr = cv2.cvtColor(frame_with_boxes, cv2.COLOR_RGB2BGR)
-
-    # Display the frame with detections
-    cv2.imshow("Webcam Hand Gesture Detection", frame_bgr)
-
-    # If you press 'q' on your keyboard, the program will stop
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-# Release the webcam and close any OpenCV windows
-cap.release()
+webcam.release()
 cv2.destroyAllWindows()
+
+
+
